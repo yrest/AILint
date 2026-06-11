@@ -1,223 +1,161 @@
-# Visible AI Provenance Headers — Specification v0
+# AI Presence Marker — Visible Form, Specification v0
 
 **Status: RECOMMENDED for code and structured documents.**
 
-This specification defines the canonical format for visible, human-readable AI provenance markers in source code and structured text. It implements AILint marker types 3.2 (Inline Comment Marker) and 3.3 (Structured Header / Frontmatter) from the AILint marker specification.
+This specification defines the canonical visible form of the AILint AI-presence marker for source code and structured text. It implements AILint marker types 3.2 (Inline Comment Marker) and 3.3 (Structured Header / Frontmatter).
 
-These markers are designed to be:
-- **Grep-able**: `grep -r "AILint-Origin"` finds all AI-touched files in a repo
-- **Diff-able**: changes to provenance metadata are visible in code review
-- **Linter-enforceable**: policy tools can require, validate, or block them
-- **Human-readable**: no tooling required to understand what the marker says
+> The marker is a cooperative signal, not proof of AI authorship.
+
+The visible form carries exactly one claim: **an LLM produced or materially
+transformed this content.** It does not encode provider, model, timestamp,
+confidence, or lineage.
 
 ---
 
-## Marker Format
+## Design properties
 
-### Inline Comment Marker (Type 3.2)
+- **Grep-able:** `grep -r "ailint: ai_present"` audits an entire repo
+- **Diff-able:** changes to marker presence are visible in code review
+- **Linter-enforceable:** CI checks can require, validate, or block the marker
+- **Human-readable:** no tooling required to understand what it says
+- **Minimal payload:** one boolean claim, one version field, nothing else
 
-Used in any file where a comment can be placed. Syntax is language-agnostic — the same key-value string is wrapped in whatever comment delimiter the language uses.
+---
 
-**Canonical string:**
+## Formats
+
+### Inline comment (Type 3.2)
+
+The same key-value string wrapped in the host language's comment syntax:
+
 ```
-AILint-Origin: <role>; provider=<provider>; model=<model>; reviewed=<bool>
+ailint: ai_present
 ```
 
-**Fields:**
+**Placement:** first or second line of the file or code block. After a shebang
+(`#!`) if present.
 
-| Field | Required | Values |
-|-------|----------|--------|
-| `role` | Yes | `generated` \| `assisted` \| `summarized` \| `reviewed` \| `translated` |
-| `provider` | Yes | `anthropic` \| `openai` \| `google` \| `github` \| `meta` \| `unknown` |
-| `model` | Recommended | Model identifier string, e.g. `claude-sonnet-4-6`, `gpt-4o`, `gemini-2.0` |
-| `reviewed` | Recommended | `true` if a human reviewed and edited the output; `false` otherwise |
+**By language:**
 
-**Role definitions:**
+| Language | Full marker line |
+|----------|-----------------|
+| Python / Shell / Bash / Ruby / Perl / R / MATLAB | `# ailint: ai_present` |
+| JS / TS / Java / C / C++ / C# / Go / Rust / Kotlin / Swift | `// ailint: ai_present` |
+| HTML / XML / SVG | `<!-- ailint: ai_present -->` |
+| CSS / SCSS / Less | `/* ailint: ai_present */` |
+| SQL / Lua / Haskell | `-- ailint: ai_present` |
 
-| Role | Meaning |
-|------|---------|
-| `generated` | Content was primarily produced by the AI with minimal human editing |
-| `assisted` | Human wrote the majority; AI contributed completions, suggestions, or edits |
-| `summarized` | AI summarized or condensed existing human-authored content |
-| `reviewed` | Human wrote it; AI reviewed, checked, or critiqued it |
-| `translated` | AI translated content from another language or format |
-
-**Examples by language:**
+**Examples:**
 
 ```python
-# AILint-Origin: generated; provider=anthropic; model=claude-sonnet-4-6; reviewed=false
-def process_records(records):
+# ailint: ai_present
+def process(records):
     ...
 ```
 
 ```javascript
-// AILint-Origin: assisted; provider=openai; model=gpt-4o; reviewed=true
+// ailint: ai_present
 export function clamp(n, min, max) {
     return Math.min(Math.max(n, min), max);
 }
 ```
 
-```java
-// AILint-Origin: generated; provider=anthropic; model=claude; reviewed=false
-public class RateLimiter {
-```
-
 ```html
-<!-- AILint-Origin: generated; provider=google; model=gemini-2.0; reviewed=false -->
+<!-- ailint: ai_present -->
 <section class="hero">
 ```
 
 ```css
-/* AILint-Origin: generated; provider=anthropic; model=claude; reviewed=false */
-.container {
+/* ailint: ai_present */
+.container { max-width: 1200px; }
 ```
 
 ```bash
-# AILint-Origin: generated; provider=anthropic; model=claude; reviewed=false
+# ailint: ai_present
 set -euo pipefail
 ```
 
 ```sql
--- AILint-Origin: generated; provider=openai; model=gpt-4o; reviewed=false
+-- ailint: ai_present
 SELECT user_id, COUNT(*) AS event_count
 ```
 
-**Placement rule:** First or second line of the file or code block. If a shebang line (`#!`) is present, place immediately after it.
-
 ---
 
-### Structured Frontmatter Marker (Type 3.3)
+### Structured frontmatter (Type 3.3)
 
-Used in Markdown documents, configuration files, and any format that supports YAML/TOML/JSON frontmatter.
+For Markdown, configuration files, and any format supporting YAML/TOML frontmatter.
 
-**YAML frontmatter:**
+**YAML:**
 ```yaml
 ---
-ai_origin:
-  role: generated
-  provider: anthropic
-  model: claude-sonnet-4-6
-  reviewed: false
+ailint:
+  ai_present: true
+  version: 0
 ---
 ```
 
-**TOML frontmatter (Hugo, etc.):**
+**TOML:**
 ```toml
 +++
-[ai_origin]
-role = "generated"
-provider = "anthropic"
-model = "claude-sonnet-4-6"
-reviewed = false
+[ailint]
+ai_present = true
+version = 0
 +++
 ```
 
-**Placement rule:** At the absolute start of the file, before any content.
+**Placement:** absolute start of the file, before any content. If frontmatter
+already exists, add the `ailint` key to it.
 
 ---
 
-### JSON Inline Marker
+### JSON inline field
 
-For JSON files and API responses that cannot use comment syntax.
+For JSON files where comment syntax is unavailable.
 
 ```json
 {
-  "_ailint": {
-    "role": "generated",
-    "provider": "anthropic",
-    "model": "claude",
-    "reviewed": false
-  }
+  "_ailint": {"ai_present": true, "version": 0},
+  "your_key": "your_value"
 }
 ```
 
-**Placement rule:** As the first key in the root object. For JSON arrays, wrap the array: `{"_ailint": {...}, "data": [...]}`.
-
-**Note:** The `_ailint` key is a convention, not a standard. Parsers that strictly reject unknown keys will break. Verify schema compatibility before using in API responses.
+**Caveat:** parsers with strict schema validation may reject unknown keys.
+Verify compatibility before using in API responses or schema-validated configs.
 
 ---
 
 ## Detection
 
-Any of the following patterns indicates a visible provenance marker is present:
-
-```
-# Inline comment form (any language)
-AILint-Origin:
-
-# Frontmatter form
-ai_origin:
-
-# JSON form
-"_ailint"
-```
-
-**Grep one-liner to audit a repository:**
 ```bash
-grep -rn "AILint-Origin\|ai_origin\|\"_ailint\"" --include="*.py" --include="*.js" --include="*.ts" --include="*.md" .
-```
+# Find all marked files in a repo
+grep -rn "ailint: ai_present\|\"_ailint\"\|ai_present: true" .
 
-**Detect files missing a marker** (example for Python):
-```bash
+# Find unmarked Python files (example policy check)
 git ls-files "*.py" | while read f; do
-    grep -qL "AILint-Origin" "$f" && echo "no marker: $f"
+    grep -qL "ailint: ai_present" "$f" && echo "no marker: $f"
 done
 ```
 
 ---
 
-## Linter Integration
-
-A pre-commit hook or CI check can enforce presence of markers on new files:
-
-```bash
-# .git/hooks/pre-commit (example, not production-ready)
-git diff --cached --name-only --diff-filter=A | grep "\.py$" | while read f; do
-    if ! grep -q "AILint-Origin" "$f"; then
-        echo "Missing AILint-Origin marker in new file: $f"
-        exit 1
-    fi
-done
-```
-
----
-
-## Relationship to Other Marker Types
-
-| Scenario | Recommended marker |
-|----------|--------------------|
-| Source code file | Type 3.2 inline comment (this spec) |
-| Markdown / config document | Type 3.3 frontmatter (this spec) |
-| Git commit | Type 3.1 git trailer (`AILint-Provenance:`) |
-| Ephemeral chat / prose | Type 3.4 invisible Unicode (experimental) |
-| Signed/verified provenance | C2PA sidecar or signed git commit |
-
----
-
-## Schema
+## Schema (frontmatter / JSON form)
 
 ```json
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "title": "AILint Provenance Header",
+  "title": "AILint AI-Presence Marker",
   "type": "object",
-  "required": ["role", "provider"],
+  "required": ["ai_present"],
   "properties": {
-    "role": {
-      "type": "string",
-      "enum": ["generated", "assisted", "summarized", "reviewed", "translated"]
-    },
-    "provider": {
-      "type": "string",
-      "enum": ["anthropic", "openai", "google", "github", "meta", "unknown"]
-    },
-    "model": {
-      "type": "string",
-      "description": "Model identifier as reported by the provider, e.g. claude-sonnet-4-6"
-    },
-    "reviewed": {
+    "ai_present": {
       "type": "boolean",
-      "description": "True if a human reviewed and edited the AI output before commit"
+      "const": true
+    },
+    "version": {
+      "type": "integer",
+      "const": 0,
+      "description": "Spec version. Currently always 0."
     }
   },
   "additionalProperties": false
@@ -226,5 +164,30 @@ done
 
 ---
 
-*AILint Visible Provenance Headers — v0*
+## What this marker does not claim
+
+- It does not identify the provider or model
+- It does not record when the content was generated
+- It does not indicate how much of the content is AI-generated vs human-edited
+- It does not prove the claim — any file can have the marker added manually
+
+These omissions are intentional. The marker makes only the claim it can honestly
+make without cryptographic infrastructure: "an LLM was present."
+
+---
+
+## Relationship to other marker types
+
+| Scenario | Recommended approach |
+|----------|---------------------|
+| Source code file | Type 3.2 inline comment (this spec) |
+| Markdown / config document | Type 3.3 frontmatter (this spec) |
+| JSON / structured data | `_ailint` field (this spec) |
+| Conversational text / prose | Type 3.4 invisible marker (see `embedded-marker-experimental-v0.md`) |
+| Git commit | Type 3.1 git trailer (`AILint-Provenance:`) |
+| Verified / signed provenance | C2PA sidecar or signed git commit |
+
+---
+
+*AILint AI Presence Marker — Visible Form, v0*
 *Implements: AILint Marker Specification §3.2, §3.3*

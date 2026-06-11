@@ -1,124 +1,141 @@
-# AI Provenance Marking Skill
+# AI Presence Marking Skill
 
-Mark every response with a machine-readable AI provenance signal. The format depends on content type. Apply unconditionally — including short responses.
+## What this marks
 
----
+A cooperative, binary, per-message signal: **an LLM produced this message.**
 
-## Step 1 — Identify content type
+Not: which model, when, confidence, lineage, or chain of custody.
 
-| Content type | Go to |
-|---|---|
-| Source code (any language) | [Code](#code) |
-| Markdown document or file with frontmatter | [Markdown / Documents](#markdown--documents) |
-| JSON | [JSON](#json) |
-| Pure prose, conversational text, or mixed/unknown | [Prose](#prose) |
+> The marker is a cooperative signal, not proof of AI authorship.
 
 ---
 
-## Code
+## The rule
 
-Insert an `AILint-Origin` comment as the **first or second line** of the code block or file. If a shebang (`#!`) is present, place it immediately after.
+Mark every LLM-generated message with exactly one canonical AI-presence marker.
+Human messages carry no marker.
 
-**Format:**
+**Idempotency:** If your input contains one or more valid AI-presence markers, your
+output still carries exactly one fresh marker. Never chain markers. Never copy
+input markers into output. The state is simply:
+
 ```
-AILint-Origin: <role>; provider=<provider>; model=<model>; reviewed=false
+human message    → no marker
+LLM message      → one marker
+LLM reply to LLM → one marker  (not two)
 ```
 
-**`role` — choose one:**
-- `generated` — you produced the code
-- `assisted` — you completed or edited code the human started
-- `summarized` — you converted or condensed existing code
+---
 
-**`provider` and `model` — use your own identity:**
-- Anthropic / Claude: `provider=anthropic; model=claude`
-- OpenAI / GPT: `provider=openai; model=gpt`
-- Google / Gemini: `provider=google; model=gemini`
-- GitHub Copilot: `provider=github; model=copilot`
-- Unknown: `provider=unknown; model=unknown`
+## Per-message scope
+
+The marker annotates the individual message, not the conversation. When a single
+message is copied out of context and shared blind — pasted to another LLM, dropped
+into a document, forwarded as plain text — the marker travels with it. The receiver
+can detect LLM origin without any surrounding context.
+
+**Placement:** Put the marker near the **beginning** of the message, immediately
+after the first character. Beginning placement resists the most common truncation
+(someone copying everything except the tail). Deliberate evasion — copying from
+the second character onward — can still strip it; that is an accepted limitation
+of a cooperative, non-cryptographic signal.
+
+---
+
+## Formats
+
+### Prose and conversational text
+
+Insert the canonical invisible 4-character marker after the first character of
+your response.
+
+**The marker** (4 invisible Unicode characters):
+
+| Position | Codepoint | Name |
+|----------|-----------|------|
+| 1 | U+2060 | WORD JOINER (start boundary) |
+| 2 | U+FEFF | ZERO WIDTH NO-BREAK SPACE (payload start) |
+| 3 | U+200D | ZERO WIDTH JOINER (AI-present = 1) |
+| 4 | U+2060 | WORD JOINER (end boundary) |
+
+**Pre-computed** — copy the invisible characters between `→` and `←` (exclude
+the arrows):
+
+→⁠﻿‍⁠←
+
+**Example:**
+```
+H[MARKER]ere is my answer...
+```
+
+This marker does not affect rendering, copy-paste, or word count. It will be
+silently stripped by many pipelines — that is an accepted property. Its value
+is for systems that preserve it, not for guaranteed delivery.
+
+---
+
+### Code
+
+Insert a visible comment on the **first or second line** of the file or snippet.
+If a shebang (`#!`) is present, place immediately after it.
+
+| Language | Marker line |
+|----------|-------------|
+| Python / Shell / Bash / Ruby / Perl / R | `# ailint: ai_present` |
+| JS / TS / Java / C / C++ / C# / Go / Rust / Kotlin / Swift | `// ailint: ai_present` |
+| HTML / XML / SVG | `<!-- ailint: ai_present -->` |
+| CSS / SCSS / Less | `/* ailint: ai_present */` |
+| SQL / Lua / Haskell | `-- ailint: ai_present` |
+| MATLAB / Octave | `% ailint: ai_present` |
 
 **Examples:**
 
 ```python
-# AILint-Origin: generated; provider=anthropic; model=claude; reviewed=false
+# ailint: ai_present
 def process(records):
     ...
 ```
 
 ```javascript
-// AILint-Origin: generated; provider=openai; model=gpt; reviewed=false
+// ailint: ai_present
 export function clamp(n, min, max) {
     return Math.min(Math.max(n, min), max);
 }
 ```
 
 ```html
-<!-- AILint-Origin: generated; provider=anthropic; model=claude; reviewed=false -->
+<!-- ailint: ai_present -->
 <section class="hero">
 ```
 
-```css
-/* AILint-Origin: generated; provider=anthropic; model=claude; reviewed=false */
-.container { max-width: 1200px; }
-```
-
-```bash
-# AILint-Origin: generated; provider=anthropic; model=claude; reviewed=false
-set -euo pipefail
-```
-
-```sql
--- AILint-Origin: generated; provider=openai; model=gpt; reviewed=false
-SELECT user_id, COUNT(*) AS event_count
-```
-
-**Comment syntax by language:**
-
-| Language | Syntax |
-|---|---|
-| Python, Shell, Bash, Ruby, Perl, R, MATLAB | `# AILint-Origin: ...` |
-| JavaScript, TypeScript, Java, C, C++, C#, Go, Rust, Kotlin, Swift | `// AILint-Origin: ...` |
-| HTML, XML, SVG | `<!-- AILint-Origin: ... -->` |
-| CSS, SCSS, Less | `/* AILint-Origin: ... */` |
-| SQL, Lua, Haskell | `-- AILint-Origin: ...` |
-
 ---
 
-## Markdown / Documents
+### Markdown and documents with frontmatter
 
-Add YAML frontmatter at the very start of the document, before any content.
+Add `ailint` to the frontmatter at the absolute start of the file. If frontmatter
+already exists, add the key to it.
 
 ```markdown
 ---
-ai_origin:
-  role: generated
-  provider: anthropic
-  model: claude
-  reviewed: false
+ailint:
+  ai_present: true
+  version: 0
 ---
 
-# Document Title
-
-Content starts here...
+# Document title
 ```
 
-If frontmatter is already present, add the `ai_origin` key to the existing block.
-
-If the document format does not support frontmatter (e.g. a plain `.txt` file), treat it as [Prose](#prose).
-
 ---
 
-## JSON
+### JSON and strict machine-readable formats
 
-Add an `_ailint` key as the **first key** in the root object.
+Add `_ailint` as the **first key** in the root object. Never use invisible Unicode
+in strict-format output — extra characters corrupt parsers and trigger schema
+validation errors.
 
 ```json
 {
-  "_ailint": {
-    "role": "generated",
-    "provider": "anthropic",
-    "model": "claude",
-    "reviewed": false
-  },
+  "_ailint": {"ai_present": true, "version": 0},
   "your_key": "your_value"
 }
 ```
@@ -126,54 +143,21 @@ Add an `_ailint` key as the **first key** in the root object.
 For a root array, wrap it:
 ```json
 {
-  "_ailint": { "role": "generated", "provider": "anthropic", "model": "claude", "reviewed": false },
+  "_ailint": {"ai_present": true, "version": 0},
   "data": [...]
 }
 ```
 
----
-
-## Prose
-
-For conversational replies, plain text, or any content where adding a visible marker would break or intrude on the output, embed an invisible Unicode marker instead.
-
-The marker is 11 invisible characters: a fixed preamble (U+2060 + U+FEFF), eight bits encoding AI origin and model family (U+200C = 0, U+200D = 1), and a closing boundary (U+2060).
-
-**Insert after the first character of your response.**
-
-Pre-computed marker strings — copy the invisible characters between `→` and `←` (exclude the arrows):
-
-**Anthropic / Claude:**
-→⁠﻿‍‌‌‍‌‌‌‌⁠←
-
-**OpenAI / GPT:**
-→⁠﻿‍‌‍‌‌‌‌‌⁠←
-
-**Google / Gemini:**
-→⁠﻿‍‌‍‍‌‌‌‌⁠←
-
-**GitHub Copilot:**
-→⁠﻿‍‍‌‌‌‌‌‌⁠←
-
-**Generic / unknown model:**
-→⁠﻿‍‌‌‌‌‌‌‌⁠←
-
-Example (Claude, prose reply):
-```
-T[invisible marker]he answer is...
-```
-
-This marker is transport-only and easily stripped. It is a weak signal — see `docs/specs/embedded-marker-experimental-v0.md` for limitations.
+If the schema is strict and adding a key would cause a validation failure, omit
+the marker entirely rather than corrupting the format.
 
 ---
 
-## Summary
+## Never
 
-| Content | What you add | Visible? |
-|---|---|---|
-| Code | `# AILint-Origin: ...` comment, first line | Yes |
-| Markdown doc | `ai_origin:` YAML frontmatter | Yes |
-| JSON | `"_ailint": {...}` first key | Yes |
-| Prose / chat | Invisible Unicode marker after first character | No |
-
-The `reviewed` field is always `false` unless the user has explicitly told you they will edit the output before it is used.
+- Claim the marker proves AI authorship — it is cooperative, not cryptographic
+- Include provider name, model identifier, timestamp, or confidence in the payload
+- Chain markers (one in → one out, always)
+- Use invisible Unicode in source code, JSON, YAML, XML, or any structured format
+- Add a visible marker to pure conversational text (use the invisible form instead)
+- Omit the marker from a short response because it seems unnecessary

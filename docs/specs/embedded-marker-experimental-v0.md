@@ -1,248 +1,176 @@
-# Embedded Zero-Width AI-Origin Marker — Experimental Specification v0
+# AI Presence Marker — Invisible Form, Experimental Specification v0
 
-**Status: EXPERIMENTAL — not normative, not suitable for production use without explicit policy controls.**
+**Status: EXPERIMENTAL — use only for prose and conversational text.**
 
-> **Scope:** This technique applies to **unstructured text and prose only** — chat output, forum posts, documents, email. It is **not suitable for source code** in any context where standard SDLC tooling runs. See [When Not To Use This](#when-not-to-use-this) and [Production Alternatives](#production-alternatives) below.
+> **Scope:** This technique applies to **unstructured prose and conversational text only** — chat messages, forum posts, plain-text documents. It is **not suitable for source code, JSON, YAML, XML, or any structured format.** For those, use the visible form (`visible-provenance-headers-v0.md`).
 
-This document describes an optional, transport-only technique for encoding an AI-origin signal as invisible Unicode characters inside prose output. It corresponds to AILint marker type 3.4 (Embedded / Invisible Marker) in the main marker specification.
+> The marker is a cooperative signal, not proof of AI authorship.
+
+---
+
+## Purpose
+
+The invisible form exists for one specific use case: **content traveling out of context.**
+
+When a single LLM-generated message is copied and pasted blind — to another LLM, into a document, shared as plain text — the surrounding metadata (who said what, which model, which conversation) is stripped. The invisible marker travels with the text itself and allows a receiver to detect LLM origin without any surrounding context.
+
+This is a per-message signal, not a per-conversation or per-session signal. Each LLM message carries exactly one marker. Human messages carry none. An exported chat transcript therefore becomes individually distinguishable message by message.
 
 ---
 
 ## ⚠️ Caveats and Limitations
 
-Read this section before using or implementing this scheme.
+**Cooperative only.**
+The marker is trivially removable. It signals "this content claims LLM origin" — not "this is cryptographically verified as LLM-generated." Never use it as the sole basis for an origin decision.
 
-**Not a proof of origin.**
-The marker is trivially spoofable. Any party can copy and paste the character sequence. It signals "this content claims AI origin" — not "this content was verified as AI-generated." Treat it as a weak, non-authoritative hint, consistent with §5 (Marker Precedence) of the AILint marker spec. Never use it as the sole basis for a provenance decision.
+**Beginning placement resists, not prevents, truncation.**
+The marker is placed after the first character of the message. Someone copying the entire message from character 2 onward can strip it. This is deliberate evasion and an accepted limitation; casual copy-paste preserves the marker.
 
-**Model-instruction-level control is unreliable.**
-If this marker is embedded by instructing a language model, any user or downstream prompt can override it with "do not include invisible Unicode characters." The marker is not enforced at the generation layer; it is a best-effort convention.
+**Pipeline survivability is low.**
+Unicode normalizers, copy-paste in many editors, log aggregators, CMS pipelines, email clients, and search indexes may silently strip the marker. Absence of a marker never implies human origin.
 
 **Invisible Unicode is a source hygiene risk.**
-Zero-width characters belong to the same class exploited in Trojan Source attacks (CVE-2021-42574). Since that disclosure, VS Code, GitHub, and most enterprise SAST tools actively flag bidirectional and invisible Unicode characters as severe security risks. Embedding these markers in source code means AI-generated code will immediately fail standard enterprise security linting. This is not just a fragility concern — it is a direct conflict with secure SDLC hygiene.
+These characters are flagged by SAST tools and security linters in codebases (ref: Trojan Source, CVE-2021-42574). Do not use this form in source files. Use the visible comment form instead.
 
-**Pipeline survivability for prose is also low.**
-Prettier, Black, ESLint, and standard editor save-hooks strip non-printing characters outside comments and strings. Unicode normalizers (NFC/NFD/NFKC/NFKD), log aggregators, search indexes, CMS pipelines, email clients, and JSON parsers that normalize string values will silently strip or corrupt the marker. Absence of a marker never implies human origin.
-
-**Disclosure obligation.**
-Embedding invisible characters without disclosure can be construed as covert tracking or steganography even when the intent is benign. Any deployment must be accompanied by clear documentation of what is embedded and why.
-
-**Detector before embedder.**
-AILint tooling should prioritize detecting and reporting these markers before promoting their insertion. Widespread embedding without detection infrastructure creates noise, not signal.
+**Disclosure.**
+Embedding invisible characters without disclosure can be construed as covert tracking. Deployments should document what is embedded and why.
 
 ---
 
-## When Not To Use This
+## The Marker
 
-**Do not use this technique for source code.** There is no safe placement in a source file. Comments get stripped by minifiers. String literals containing invisible Unicode trigger SAST warnings. Pre-commit hooks and CI pipelines will reject or silently mutate the markers. The Trojan Source class of attacks means the security industry is actively working to eliminate invisible Unicode from codebases — embedding it intentionally puts AI-generated code on the wrong side of that process.
+Four invisible Unicode characters. No provider. No model. No timestamp. No lineage.
 
-For source code provenance, use out-of-band approaches. See [Production Alternatives](#production-alternatives).
+| Position | Codepoint | Name | Role |
+|----------|-----------|------|------|
+| 1 | U+2060 | WORD JOINER | Start boundary |
+| 2 | U+FEFF | ZERO WIDTH NO-BREAK SPACE | Payload start signal |
+| 3 | U+200D | ZERO WIDTH JOINER | AI-present = 1 |
+| 4 | U+2060 | WORD JOINER | End boundary |
 
----
+**Pre-computed** — copy the 4 invisible characters between `→` and `←` (exclude
+the arrows):
 
-## Production Alternatives
+→⁠﻿‍⁠←
 
-This scheme is a weak, lossy, easily-stripped hint. For real provenance needs, use the right tool for the layer.
-
-### For prose and text content
-
-**Token-level statistical watermarking** embeds a signal into the actual token sampling distribution at generation time, making it statistically detectable without polluting the string data. It survives copy-paste and is robust against light paraphrasing. Key implementations and research:
-
-- Kirchenbauer et al. (2023), "A Watermark for Large Language Models" — partitions the token vocabulary into green/red lists per secret key; the model preferentially samples green tokens; detection is statistical.
-- Google SynthID (text) — similar approach; claimed robust to paraphrasing and translation.
-
-**Constraint:** both require server-side access to the model's sampling layer. They cannot be implemented as a prompt instruction or client-side post-processing.
-
-### For source code
-
-**Git trailers** are the correct mechanism. They are durable, human-readable, toolchain-compatible, and can be signed.
-
-```
-commit abc123
-Author: Dev <dev@example.com>
-
-    Add rate limiting middleware
-
-    AILint-Provenance: prov-2025-001
-    Generated-By: claude-sonnet-4-6
-    Generation-Role: assisted
-```
-
-**Signed commits via AI service account** — if an AI agent makes commits directly, use a dedicated service account with a verified GPG or SSH signing key. The signature proves the commit came from that account; the account's identity encodes the AI origin.
-
-**C2PA sidecar** for assets that travel outside git (exported documentation, generated reports, media): attach a signed C2PA manifest. This is verifiable and tamper-evident in a way invisible Unicode markers are not.
+There is exactly one canonical marker. Unlike earlier drafts of this spec, there
+are no per-model or per-provider variants. The marker encodes one bit of information:
+an LLM was here.
 
 ---
 
-## Relationship to C2PA / Content Credentials
+## Placement
 
-For production provenance use cases, prefer signed sidecar metadata aligned with the [C2PA (Coalition for Content Provenance and Authenticity)](https://c2pa.org/) standard. C2PA uses cryptographically signed manifests attached to assets, providing verifiable, tamper-evident provenance that this scheme cannot.
-
-This embedded marker scheme is complementary, not a substitute:
-
-| Property | This scheme | C2PA | Git trailers |
-|----------|------------|------|-------------|
-| Verification | None (trivially spoofable) | Cryptographic signature | Signing key |
-| Survives copy-paste | Partially | No (manifest is separate) | No (git-only) |
-| Source code | Not suitable | Not designed for code | Yes |
-| Prose / chat | Yes (weakly) | Impractical | Not applicable |
-| Tooling required | None | C2PA-aware reader | Git |
-| Suitable for compliance | No | Yes | Partial |
-
-Use this scheme only where C2PA and Git trailers are both impractical (inline chat, ephemeral prose) and a weak, lossy, non-binding hint is acceptable.
-
----
-
-## Encoding Scheme
-
-### Character Alphabet
-
-| Role | Codepoint | Name |
-|------|-----------|------|
-| Boundary | U+2060 | WORD JOINER |
-| Payload start | U+FEFF | ZERO WIDTH NO-BREAK SPACE |
-| Bit = 0 | U+200C | ZERO WIDTH NON-JOINER |
-| Bit = 1 | U+200D | ZERO WIDTH JOINER |
-
-### Marker Structure
+Insert immediately **after the first character** of the message.
 
 ```
-[U+2060][U+FEFF] [8 payload bits] [U+2060]
-```
-
-11 invisible characters total. The U+2060 + U+FEFF preamble is the detection anchor.
-
-### Payload Bit Layout
-
-| Bit | Field | Notes |
-|-----|-------|-------|
-| 0 | AI-origin flag | Always `1` (U+200D) in a valid AILint marker |
-| 1–3 | Model family | 3-bit code; see table below |
-| 4–7 | Format version | `0000` = v0 of this spec |
-
-**Model family codes (bits 1–3):**
-
-| Family | Bits | Characters |
-|--------|------|------------|
-| Generic / unknown | `000` | U+200C U+200C U+200C |
-| Claude (Anthropic) | `001` | U+200C U+200C U+200D |
-| GPT (OpenAI) | `010` | U+200C U+200D U+200C |
-| Gemini (Google) | `011` | U+200C U+200D U+200D |
-| Copilot (GitHub) | `100` | U+200D U+200C U+200C |
-| Other / custom | `101` | U+200D U+200C U+200D |
-
-### Pre-computed Marker Strings
-
-Each string below contains exactly 11 invisible characters, shown between `→` and `←` as visual guides (exclude the arrows when embedding).
-
-**Generic AI — `1 000 0000`:**
-→⁠﻿‍‌‌‌‌‌‌‌⁠←
-
-**Claude — `1 001 0000`:**
-→⁠﻿‍‌‌‍‌‌‌‌⁠←
-
-**GPT — `1 010 0000`:**
-→⁠﻿‍‌‍‌‌‌‌‌⁠←
-
-**Gemini — `1 011 0000`:**
-→⁠﻿‍‌‍‍‌‌‌‌⁠←
-
-**Copilot — `1 100 0000`:**
-→⁠﻿‍‍‌‌‌‌‌‌⁠←
-
----
-
-## Placement Guidelines (Prose Only)
-
-These guidelines apply only to unstructured prose and text content. Do not use this technique in source code files — see [When Not To Use This](#when-not-to-use-this).
-
-The governing principle: place the marker where it is syntactically inert and will survive the most common transformations for the content type.
-
-### Prose and Markdown
-
-Insert after the first character of the first sentence or heading. This placement survives most line-wrapping and copy-paste operations better than absolute position 0.
-
-```
-H[MARKER]ere is the content...
+H[MARKER]ere is the answer to your question...
 ```
 
 For a Markdown heading:
-
 ```markdown
 # T[MARKER]itle
 ```
 
-### Fallback
+**Do not embed at the end of the message.** End placement is vulnerable to the
+most common truncation pattern (copy the beginning, lose the tail). Beginning
+placement means a full copy of any contiguous prefix preserves the signal.
 
-If the content type is unclassifiable, do not embed a marker. Embedding invisible characters in an unknown format risks corrupting structured data or triggering security linting on content that never needed a marker.
-
----
-
-## Code Placement — For Detectors Only
-
-The following table documents where an earlier version of this spec suggested placing markers in source code. **This is retained solely as a reference for building detectors** that need to know where to scan for pre-existing markers. Do not use it as a guide for embedding.
-
-| Language | Where to scan |
-|----------|---------------|
-| Python `#` | End of first `#` comment line |
-| Python docstring | Start of module-level `"""..."""` |
-| JS / TS / Java / C / C++ / C# / Go / Rust / Kotlin `//` | End of first `//` line |
-| JS / TS / Java / C / C++ / C# `/* */` | Start of first `/* */` block |
-| Shell / Bash / Ruby / Perl / R `#` | End of first `#` line |
-| HTML / XML / SVG | Inside first `<!-- -->` comment |
-| CSS / SCSS / Less | Inside first `/* */` block |
-| SQL / Lua / Haskell `--` | End of first `--` line |
-| MATLAB `%` | End of first `%` line |
-| JSON | Start of first string value in root object/array |
+**Do not embed at position 0 (before the first character).** Some renderers treat
+a leading U+FEFF as a BOM and strip or misinterpret it.
 
 ---
 
 ## Detection and Decoding
 
-Scan for the two-character preamble U+2060 U+FEFF. On match, read the next 8 characters:
+Scan for the two-character preamble **U+2060 followed by U+FEFF**. On match:
 
-- U+200D = bit `1`
-- U+200C = bit `0`
-- Any other character = malformed; abort
-
-Expect a closing U+2060 at position 10. Decode the payload using the bit layout above.
+1. Read the next character. U+200D = AI-present. Anything else = malformed.
+2. Expect closing U+2060 at position 3.
 
 **Interpreting results:**
 
-- Marker present and valid → content carries an AI-origin claim for the indicated model family. This is not verified.
-- Marker absent → no signal. Do not infer human origin; the marker may have been stripped.
-- Marker malformed → log and discard; do not act on partial decodes.
+| Result | Meaning |
+|--------|---------|
+| Valid marker found | Content carries a cooperative AI-origin claim |
+| Marker absent | No signal. Do not infer human origin — marker may have been stripped |
+| Marker malformed | Log and discard; do not act on partial decodes |
 
 ---
 
-## Verification Utility
+## Idempotency
 
-```python
-import sys
+If the input already contains one or more valid AI-presence markers, emit exactly
+one fresh marker in the output. Do not chain markers. Do not count how many were
+in the input.
 
-MARKER_CHARS = {'⁠', '﻿', '‌', '‍'}
+```
+Input:  H[MARKER]uman pastes an LLM message here...
+Output: S[MARKER]ure, here is my response...
+```
 
-text = sys.stdin.read()
-hits = [(i, ch) for i, ch in enumerate(text) if ch in MARKER_CHARS]
-
-if not hits:
-    print("No AILint marker characters found.")
-else:
-    for pos, ch in hits:
-        print(f"pos {pos}: U+{ord(ch):04X}  {ch.encode('unicode_escape').decode()}")
+Not:
+```
+Output: S[MARKER][MARKER]ure, here is my response...  ← wrong
 ```
 
 ---
 
-## Implementation Notes
+## Verification
 
-- This marker is transport-only. It does not constitute full provenance on its own (AILint spec §3.4, §5).
-- Stripping the marker must not invalidate the content (loss-tolerant).
-- Presence must be auditable by standard Unicode inspection — this is not a covert channel.
-- Tools consuming this marker should always apply the lower-confidence weight appropriate to an unsigned, spoofable signal.
+```python
+import sys
+
+PREAMBLE = '⁠﻿'
+AI_PRESENT = '‍'
+BOUNDARY = '⁠'
+
+text = sys.stdin.read()
+i = 0
+found = []
+while i < len(text) - 1:
+    if text[i:i+2] == PREAMBLE:
+        payload = text[i+2] if i+2 < len(text) else ''
+        close = text[i+3] if i+3 < len(text) else ''
+        if payload == AI_PRESENT and close == BOUNDARY:
+            found.append(('valid', i))
+        else:
+            found.append(('malformed', i))
+        i += 4
+    else:
+        i += 1
+
+if not found:
+    print("No AILint marker found.")
+for status, pos in found:
+    print(f"pos {pos}: {status}")
+```
 
 ---
 
-*AILint Embedded Marker Experimental Specification — v0*
-*Normative reference: AILint Marker Specification §3.4*
-*See also: [C2PA Specification](https://c2pa.org/specifications/specifications/2.1/specs/C2PA_Specification.html)*
+## When Not To Use This
+
+Do not use the invisible form in:
+
+- Source code files of any language
+- JSON, YAML, XML, TOML, or any structured data format
+- Content that will pass through strict Unicode normalization
+- Any context where invisible Unicode would trigger security linting
+
+For those cases, use the visible comment or frontmatter form.
+
+---
+
+## Production Alternatives
+
+This scheme is a weak, lossy, easily-stripped cooperative hint. For stronger
+provenance:
+
+- **Token-level statistical watermarking** (Kirchenbauer et al. 2023, Google SynthID): embeds signal in the sampling distribution at generation time. Survives copy-paste and light paraphrasing. Requires server-side model access.
+- **Git trailers**: `AILint-Provenance:` in commit messages — durable, toolchain-compatible, signable.
+- **C2PA sidecar**: cryptographically signed manifest for assets outside git.
+
+---
+
+*AILint AI Presence Marker — Invisible Form, Experimental v0*
+*Implements: AILint Marker Specification §3.4*
