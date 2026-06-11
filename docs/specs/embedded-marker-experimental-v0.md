@@ -174,7 +174,7 @@ For a Markdown heading:
 
 ### Fallback
 
-If the content type is unclassifiable, insert at absolute position 0.
+If the content type is unclassifiable, do not embed a marker. Embedding invisible characters in an unknown format risks corrupting structured data or triggering security linting on content that never needed a marker.
 
 ---
 
