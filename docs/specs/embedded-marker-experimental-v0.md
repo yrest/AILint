@@ -2,7 +2,9 @@
 
 **Status: EXPERIMENTAL — not normative, not suitable for production use without explicit policy controls.**
 
-This document describes an optional, transport-only technique for encoding an AI-origin signal as invisible Unicode characters inside text or source code output. It corresponds to AILint marker type 3.4 (Embedded / Invisible Marker) in the main marker specification.
+> **Scope:** This technique applies to **unstructured text and prose only** — chat output, forum posts, documents, email. It is **not suitable for source code** in any context where standard SDLC tooling runs. See [When Not To Use This](#when-not-to-use-this) and [Production Alternatives](#production-alternatives) below.
+
+This document describes an optional, transport-only technique for encoding an AI-origin signal as invisible Unicode characters inside prose output. It corresponds to AILint marker type 3.4 (Embedded / Invisible Marker) in the main marker specification.
 
 ---
 
@@ -13,17 +15,62 @@ Read this section before using or implementing this scheme.
 **Not a proof of origin.**
 The marker is trivially spoofable. Any party can copy and paste the character sequence. It signals "this content claims AI origin" — not "this content was verified as AI-generated." Treat it as a weak, non-authoritative hint, consistent with §5 (Marker Precedence) of the AILint marker spec. Never use it as the sole basis for a provenance decision.
 
-**Invisible Unicode is a source hygiene risk.**
-Zero-width characters are in the same class as the characters exploited in Trojan Source-style attacks (CVE-2021-42574). Many organizations have pre-commit hooks, linters, and CI checks that reject or flag files containing them — for good reason. GitHub itself surfaces a warning on files with hidden Unicode. Do not add these markers to source code without an explicit team policy and tooling that can audit and strip them.
+**Model-instruction-level control is unreliable.**
+If this marker is embedded by instructing a language model, any user or downstream prompt can override it with "do not include invisible Unicode characters." The marker is not enforced at the generation layer; it is a best-effort convention.
 
-**Pipeline fragility.**
-The following common operations may silently strip or corrupt the marker: copy-paste into many editors, diff tools, log aggregators, search indexes, CMS pipelines, email clients, Unicode normalization (NFC/NFD/NFKC/NFKD), JSON parsers that normalize string values, and any system that filters non-printable characters. Absence of a marker never implies human origin.
+**Invisible Unicode is a source hygiene risk.**
+Zero-width characters belong to the same class exploited in Trojan Source attacks (CVE-2021-42574). Since that disclosure, VS Code, GitHub, and most enterprise SAST tools actively flag bidirectional and invisible Unicode characters as severe security risks. Embedding these markers in source code means AI-generated code will immediately fail standard enterprise security linting. This is not just a fragility concern — it is a direct conflict with secure SDLC hygiene.
+
+**Pipeline survivability for prose is also low.**
+Prettier, Black, ESLint, and standard editor save-hooks strip non-printing characters outside comments and strings. Unicode normalizers (NFC/NFD/NFKC/NFKD), log aggregators, search indexes, CMS pipelines, email clients, and JSON parsers that normalize string values will silently strip or corrupt the marker. Absence of a marker never implies human origin.
 
 **Disclosure obligation.**
-Embedding invisible characters in content without disclosure can be construed as covert tracking or steganography, even when the intent is benign. Any deployment should be accompanied by clear documentation of what is embedded and why.
+Embedding invisible characters without disclosure can be construed as covert tracking or steganography even when the intent is benign. Any deployment must be accompanied by clear documentation of what is embedded and why.
 
 **Detector before embedder.**
-AILint tooling should prioritize detecting and reporting these markers before promoting their insertion. Widespread embedding without corresponding detection infrastructure creates noise, not signal.
+AILint tooling should prioritize detecting and reporting these markers before promoting their insertion. Widespread embedding without detection infrastructure creates noise, not signal.
+
+---
+
+## When Not To Use This
+
+**Do not use this technique for source code.** There is no safe placement in a source file. Comments get stripped by minifiers. String literals containing invisible Unicode trigger SAST warnings. Pre-commit hooks and CI pipelines will reject or silently mutate the markers. The Trojan Source class of attacks means the security industry is actively working to eliminate invisible Unicode from codebases — embedding it intentionally puts AI-generated code on the wrong side of that process.
+
+For source code provenance, use out-of-band approaches. See [Production Alternatives](#production-alternatives).
+
+---
+
+## Production Alternatives
+
+This scheme is a weak, lossy, easily-stripped hint. For real provenance needs, use the right tool for the layer.
+
+### For prose and text content
+
+**Token-level statistical watermarking** embeds a signal into the actual token sampling distribution at generation time, making it statistically detectable without polluting the string data. It survives copy-paste and is robust against light paraphrasing. Key implementations and research:
+
+- Kirchenbauer et al. (2023), "A Watermark for Large Language Models" — partitions the token vocabulary into green/red lists per secret key; the model preferentially samples green tokens; detection is statistical.
+- Google SynthID (text) — similar approach; claimed robust to paraphrasing and translation.
+
+**Constraint:** both require server-side access to the model's sampling layer. They cannot be implemented as a prompt instruction or client-side post-processing.
+
+### For source code
+
+**Git trailers** are the correct mechanism. They are durable, human-readable, toolchain-compatible, and can be signed.
+
+```
+commit abc123
+Author: Dev <dev@example.com>
+
+    Add rate limiting middleware
+
+    AILint-Provenance: prov-2025-001
+    Generated-By: claude-sonnet-4-6
+    Generation-Role: assisted
+```
+
+**Signed commits via AI service account** — if an AI agent makes commits directly, use a dedicated service account with a verified GPG or SSH signing key. The signature proves the commit came from that account; the account's identity encodes the AI origin.
+
+**C2PA sidecar** for assets that travel outside git (exported documentation, generated reports, media): attach a signed C2PA manifest. This is verifiable and tamper-evident in a way invisible Unicode markers are not.
 
 ---
 
@@ -33,15 +80,16 @@ For production provenance use cases, prefer signed sidecar metadata aligned with
 
 This embedded marker scheme is complementary, not a substitute:
 
-| Property | This scheme | C2PA |
-|----------|------------|------|
-| Verification | None (trivially spoofable) | Cryptographic signature |
-| Survives copy-paste | Partially | No (manifest is separate) |
-| Source code friendly | Conditional | Not designed for code |
-| Tooling required | None (human-invisible) | C2PA-aware reader |
-| Suitable for compliance | No | Yes |
+| Property | This scheme | C2PA | Git trailers |
+|----------|------------|------|-------------|
+| Verification | None (trivially spoofable) | Cryptographic signature | Signing key |
+| Survives copy-paste | Partially | No (manifest is separate) | No (git-only) |
+| Source code | Not suitable | Not designed for code | Yes |
+| Prose / chat | Yes (weakly) | Impractical | Not applicable |
+| Tooling required | None | C2PA-aware reader | Git |
+| Suitable for compliance | No | Yes | Partial |
 
-Use this scheme where C2PA is impractical (inline text, short snippets, chat output) and you only need a weak, lossy signal — not a binding provenance claim.
+Use this scheme only where C2PA and Git trailers are both impractical (inline chat, ephemeral prose) and a weak, lossy, non-binding hint is acceptable.
 
 ---
 
@@ -104,49 +152,48 @@ Each string below contains exactly 11 invisible characters, shown between `→` 
 
 ---
 
-## Placement Guidelines
+## Placement Guidelines (Prose Only)
 
-These are guidelines, not mandates. The correct placement depends on the target environment and whether zero-width characters are acceptable there at all (see caveats above).
+These guidelines apply only to unstructured prose and text content. Do not use this technique in source code files — see [When Not To Use This](#when-not-to-use-this).
 
-The governing principle: place the marker where it is syntactically inert and will survive the most common transformations for that content type.
-
-### Code — inside the first comment
-
-Append to the end of the first comment line or block, before the closing delimiter.
-
-| Language | Placement |
-|----------|-----------|
-| Python `#` | `# text[MARKER]` |
-| Python docstring | `"""[MARKER]text"""` |
-| JS / TS / Java / C / C++ / C# / Go / Rust / Kotlin `//` | `// text[MARKER]` |
-| JS / TS / Java / C / C++ / C# `/* */` | `/* [MARKER]text */` |
-| Shell / Bash / Ruby / Perl / R `#` | `# text[MARKER]` |
-| HTML / XML / SVG | `<!-- [MARKER]text -->` |
-| CSS / SCSS / Less | `/* [MARKER]text */` |
-| SQL / Lua / Haskell `--` | `-- text[MARKER]` |
-| MATLAB `%` | `% text[MARKER]` |
-
-If no comment exists, add a minimal one only if doing so is idiomatic for the language. Do not add a comment purely to carry the marker when the file otherwise has none.
-
-### JSON
-
-Insert at the start of the first string value in the root object or array. Be aware that many JSON processors normalize string content; verify that the target parser preserves arbitrary Unicode before relying on this.
-
-```json
-{"key": "[MARKER]value"}
-```
+The governing principle: place the marker where it is syntactically inert and will survive the most common transformations for the content type.
 
 ### Prose and Markdown
 
-Insert after the first character of the first sentence or heading. This placement survives most line-wrapping and copy-paste operations better than position 0.
+Insert after the first character of the first sentence or heading. This placement survives most line-wrapping and copy-paste operations better than absolute position 0.
 
 ```
 H[MARKER]ere is the content...
 ```
 
+For a Markdown heading:
+
+```markdown
+# T[MARKER]itle
+```
+
 ### Fallback
 
-If none of the above applies, insert at absolute position 0.
+If the content type is unclassifiable, insert at absolute position 0.
+
+---
+
+## Code Placement — For Detectors Only
+
+The following table documents where an earlier version of this spec suggested placing markers in source code. **This is retained solely as a reference for building detectors** that need to know where to scan for pre-existing markers. Do not use it as a guide for embedding.
+
+| Language | Where to scan |
+|----------|---------------|
+| Python `#` | End of first `#` comment line |
+| Python docstring | Start of module-level `"""..."""` |
+| JS / TS / Java / C / C++ / C# / Go / Rust / Kotlin `//` | End of first `//` line |
+| JS / TS / Java / C / C++ / C# `/* */` | Start of first `/* */` block |
+| Shell / Bash / Ruby / Perl / R `#` | End of first `#` line |
+| HTML / XML / SVG | Inside first `<!-- -->` comment |
+| CSS / SCSS / Less | Inside first `/* */` block |
+| SQL / Lua / Haskell `--` | End of first `--` line |
+| MATLAB `%` | End of first `%` line |
+| JSON | Start of first string value in root object/array |
 
 ---
 
