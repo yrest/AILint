@@ -21,7 +21,7 @@ This is a per-message signal, not a per-conversation or per-session signal. Each
 ## ⚠️ Caveats and Limitations
 
 **Cooperative only.**
-The marker is trivially removable. It signals "this content claims LLM origin" — not "this is cryptographically verified as LLM-generated." Never use it as the sole basis for an origin decision.
+The marker is trivially removable. It is a cooperative AI-presence signal indicating the text was emitted or materially transformed by an LLM — not a cryptographic proof of authorship. Never use it as the sole basis for an origin decision.
 
 **Beginning placement resists, not prevents, truncation.**
 The marker is placed after the first character of the message. Someone copying the entire message from character 2 onward can strip it. This is deliberate evasion and an accepted limitation; casual copy-paste preserves the marker.
@@ -44,14 +44,18 @@ Four invisible Unicode characters. No provider. No model. No timestamp. No linea
 | Position | Codepoint | Name | Role |
 |----------|-----------|------|------|
 | 1 | U+2060 | WORD JOINER | Start boundary |
-| 2 | U+FEFF | ZERO WIDTH NO-BREAK SPACE | Payload start signal |
+| 2 | U+200C | ZERO WIDTH NON-JOINER | Marker preamble (paired with U+200D to form the signal) |
 | 3 | U+200D | ZERO WIDTH JOINER | AI-present = 1 |
 | 4 | U+2060 | WORD JOINER | End boundary |
+
+U+FEFF (BOM / Zero Width No-Break Space) is deliberately avoided: renderers and
+text processors may strip or misinterpret it, especially near the start of a
+stream. U+200C and U+200D are natural complements with no BOM semantics.
 
 **Pre-computed** — copy the 4 invisible characters between `→` and `←` (exclude
 the arrows):
 
-→⁠﻿‍⁠←
+→⁠‌‍⁠←
 
 There is exactly one canonical marker. Unlike earlier drafts of this spec, there
 are no per-model or per-provider variants. The marker encodes one bit of information:
@@ -77,13 +81,13 @@ most common truncation pattern (copy the beginning, lose the tail). Beginning
 placement means a full copy of any contiguous prefix preserves the signal.
 
 **Do not embed at position 0 (before the first character).** Some renderers treat
-a leading U+FEFF as a BOM and strip or misinterpret it.
+a leading U+2060 as a formatting artifact and strip it, losing the boundary.
 
 ---
 
 ## Detection and Decoding
 
-Scan for the two-character preamble **U+2060 followed by U+FEFF**. On match:
+Scan for the two-character preamble **U+2060 followed by U+200C**. On match:
 
 1. Read the next character. U+200D = AI-present. Anything else = malformed.
 2. Expect closing U+2060 at position 3.
@@ -121,7 +125,7 @@ Output: S[MARKER][MARKER]ure, here is my response...  ← wrong
 ```python
 import sys
 
-PREAMBLE = '⁠﻿'
+PREAMBLE = '⁠‌'
 AI_PRESENT = '‍'
 BOUNDARY = '⁠'
 

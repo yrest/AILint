@@ -54,14 +54,17 @@ your response.
 | Position | Codepoint | Name |
 |----------|-----------|------|
 | 1 | U+2060 | WORD JOINER (start boundary) |
-| 2 | U+FEFF | ZERO WIDTH NO-BREAK SPACE (payload start) |
+| 2 | U+200C | ZERO WIDTH NON-JOINER (marker preamble) |
 | 3 | U+200D | ZERO WIDTH JOINER (AI-present = 1) |
 | 4 | U+2060 | WORD JOINER (end boundary) |
+
+U+FEFF is avoided — it carries BOM semantics that some renderers act on.
+U+200C and U+200D are natural complements with no BOM baggage.
 
 **Pre-computed** — copy the invisible characters between `→` and `←` (exclude
 the arrows):
 
-→⁠﻿‍⁠←
+→⁠‌‍⁠←
 
 **Example:**
 ```
